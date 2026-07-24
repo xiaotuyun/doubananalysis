@@ -164,9 +164,10 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
       '电影ID', '电影名称', '豆瓣评分', '评价人数', '导演', '主演', '类型', '制片国家/地区', '上映日期', '片长'
     ]);
     setCsvFile(null);
+    setImportMode('overwrite');
     setImportResult({
       success: true,
-      message: `已成功载入内置 1,000 条豆瓣精选电影全量数据！请选择覆盖模式后点击下方【确认导入】。`,
+      message: `已成功载入内置 1,000 条豆瓣精选电影数据！已自动切换为【覆盖重置】模式，防止重复叠加。`,
     });
   };
 
@@ -349,13 +350,15 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
           });
 
           if (importMode === 'overwrite') {
-            localStorage.removeItem('douban_cleared_all');
+            localStorage.setItem('douban_cleared_all', 'true');
             localStorage.removeItem('douban_deleted_movie_ids');
             localStorage.setItem('douban_custom_movies', JSON.stringify(formattedMovies));
           } else {
             localStorage.removeItem('douban_cleared_all');
             const existing = getStoredMovies();
-            const combined = [...existing, ...formattedMovies];
+            const existingKeys = new Set(existing.map(m => String(m.movie_id || m.title || m.id)));
+            const uniqueNew = formattedMovies.filter(m => !existingKeys.has(String(m.movie_id || m.title || m.id)));
+            const combined = [...existing, ...uniqueNew];
             localStorage.setItem('douban_custom_movies', JSON.stringify(combined));
           }
 

@@ -14,9 +14,18 @@ export function getStoredMovies(): Movie[] {
     const deletedIds: number[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
     
     const baseMovies = isCleared ? [] : ALL_STATIC_MOVIES;
-    // Combine base movies + custom added movies, filtering out deleted ones
-    const combined = [...baseMovies, ...customMovies].filter(m => !deletedIds.includes(m.id));
-    return combined;
+    
+    // Deduplicate if customMovies overlay baseMovies
+    let combined: Movie[] = [];
+    if (baseMovies.length > 0 && customMovies.length > 0) {
+      const customKeys = new Set(customMovies.map(m => String(m.movie_id || m.title || m.id)));
+      const filteredBase = baseMovies.filter(m => !customKeys.has(String(m.movie_id || m.title || m.id)));
+      combined = [...filteredBase, ...customMovies];
+    } else {
+      combined = [...baseMovies, ...customMovies];
+    }
+
+    return combined.filter(m => !deletedIds.includes(m.id));
   } catch {
     return ALL_STATIC_MOVIES;
   }
