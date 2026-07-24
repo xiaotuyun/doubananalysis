@@ -111,8 +111,16 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
     const DEFAULT_STATIC_MODELS: AIModelItem[] = [
       { id: 'gemini-2.5-flash', rawName: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', description: '推荐：适合快速高效的文本和电影数据深度分析', supportedGenerationMethods: ['generateContent'] },
       { id: 'gemini-2.5-pro', rawName: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', description: '高阶：适合复杂的深度逻辑推理与结构化报告生成', supportedGenerationMethods: ['generateContent'] },
-      { id: 'gemini-1.5-flash', rawName: 'models/gemini-1.5-flash', displayName: 'Gemini 1.5 Flash', description: '经典：经典快速响应模型', supportedGenerationMethods: ['generateContent'] },
-      { id: 'gemini-1.5-pro', rawName: 'models/gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', description: '经典：超大上下文深度理解模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-2.0-flash', rawName: 'models/gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', description: '极速：新一代低延迟多模态通用模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-2.0-flash-lite', rawName: 'models/gemini-2.0-flash-lite', displayName: 'Gemini 2.0 Flash Lite', description: '轻量：高性价比与极速响应模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-2.0-pro-exp-02-05', rawName: 'models/gemini-2.0-pro-exp-02-05', displayName: 'Gemini 2.0 Pro Experimental', description: '实验：前沿高阶深度逻辑推理模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-1.5-flash', rawName: 'models/gemini-1.5-flash', displayName: 'Gemini 1.5 Flash', description: '经典：经典快速响应多模态模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-1.5-pro', rawName: 'models/gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', description: '经典：1M 超大上下文深度理解模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-1.5-flash-8b', rawName: 'models/gemini-1.5-flash-8b', displayName: 'Gemini 1.5 Flash 8B', description: '轻巧：高速高效小参数模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemma-2-27b-it', rawName: 'models/gemma-2-27b-it', displayName: 'Gemma 2 27B', description: '开源：高性能大参数开源指令模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemma-2-9b-it', rawName: 'models/gemma-2-9b-it', displayName: 'Gemma 2 9B', description: '开源：平衡高效开源语言模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemma-2-2b-it', rawName: 'models/gemma-2-2b-it', displayName: 'Gemma 2 2B', description: '开源：超轻巧边缘端语言模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'imagen-3.0-generate-002', rawName: 'models/imagen-3.0-generate-002', displayName: 'Imagen 3.0', description: '图像：专业级 AI 电影海报与艺术图像生成', supportedGenerationMethods: ['imageGeneration'] },
     ];
 
     try {
@@ -159,10 +167,54 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
       }
     } catch (err: any) {
       if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        // Try direct client-side fetch to Google Gemini REST API for live model list
+        try {
+          const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key.trim()}`);
+          if (directRes.ok) {
+            const directData = await directRes.json();
+            if (directData.models && Array.isArray(directData.models)) {
+              const liveModels: AIModelItem[] = directData.models
+                .map((m: any) => {
+                  const rawName = m.name || '';
+                  const cleanName = rawName.replace(/^models\//, '');
+                  return {
+                    id: cleanName,
+                    rawName: rawName,
+                    displayName: m.displayName || cleanName,
+                    description: m.description || '',
+                    supportedGenerationMethods: m.supportedGenerationMethods || [],
+                  };
+                })
+                .filter((m: any) => {
+                  if (m.supportedGenerationMethods && m.supportedGenerationMethods.length > 0) {
+                    return m.supportedGenerationMethods.includes('generateContent');
+                  }
+                  return m.id.includes('gemini') || m.id.includes('gemma');
+                });
+
+              if (liveModels.length > 0) {
+                setModels(liveModels);
+                localStorage.setItem('douban_gemini_api_key', key.trim());
+                if (!liveModels.some(m => m.id === selectedModel)) {
+                  const def = liveModels.find(m => m.id.includes('2.5-flash')) || liveModels[0];
+                  setSelectedModel(def.id);
+                  localStorage.setItem('douban_selected_ai_model', def.id);
+                }
+                if (autoOpenModal) setIsModelModalOpen(true);
+                return;
+              }
+            }
+          }
+        } catch {}
+
+        // Fallback to rich static list
         setModels(DEFAULT_STATIC_MODELS);
-        setSelectedModel('gemini-2.5-flash');
+        if (!selectedModel || !DEFAULT_STATIC_MODELS.some(m => m.id === selectedModel)) {
+          setSelectedModel('gemini-2.5-flash');
+          localStorage.setItem('douban_selected_ai_model', 'gemini-2.5-flash');
+        }
         localStorage.setItem('douban_gemini_api_key', key.trim());
-        localStorage.setItem('douban_selected_ai_model', 'gemini-2.5-flash');
+        if (autoOpenModal) setIsModelModalOpen(true);
       } else {
         setModels([]);
         setSelectedModel(null);
