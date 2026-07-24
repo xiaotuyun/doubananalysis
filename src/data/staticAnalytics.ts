@@ -6,14 +6,16 @@ export const ALL_STATIC_MOVIES: Movie[] = allMoviesRaw as Movie[];
 // Helper to get all stored movies including local additions/updates
 export function getStoredMovies(): Movie[] {
   try {
+    const isCleared = localStorage.getItem('douban_cleared_all') === 'true';
     const custom = localStorage.getItem('douban_custom_movies');
     const customMovies: Movie[] = custom ? JSON.parse(custom) : [];
     
     const deletedIdsRaw = localStorage.getItem('douban_deleted_movie_ids');
     const deletedIds: number[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
     
-    // Combine static movies + custom added movies, filtering out deleted ones
-    const combined = [...ALL_STATIC_MOVIES, ...customMovies].filter(m => !deletedIds.includes(m.id));
+    const baseMovies = isCleared ? [] : ALL_STATIC_MOVIES;
+    // Combine base movies + custom added movies, filtering out deleted ones
+    const combined = [...baseMovies, ...customMovies].filter(m => !deletedIds.includes(m.id));
     return combined;
   } catch {
     return ALL_STATIC_MOVIES;

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { Movie, User } from '../types';
-import { getStaticMovies } from '../data/staticAnalytics';
+import { getStaticMovies, getStoredMovies, ALL_STATIC_MOVIES } from '../data/staticAnalytics';
 
 interface MovieLibraryProps {
   currentUser: User | null;
@@ -102,8 +102,12 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account: currentUser?.account })
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (data.success) {
         setIsClearModalOpen(false);
         fetchMovies();
         onMovieCountChange?.();
@@ -111,7 +115,16 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
         alert(data.error || '清空失败');
       }
     } catch (err: any) {
-      alert(err.message || '网络或服务器错误');
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        localStorage.setItem('douban_cleared_all', 'true');
+        localStorage.removeItem('douban_custom_movies');
+        localStorage.removeItem('douban_deleted_movie_ids');
+        setIsClearModalOpen(false);
+        fetchMovies();
+        onMovieCountChange?.();
+      } else {
+        alert(err.message || '网络或服务器错误');
+      }
     } finally {
       setIsClearing(false);
     }
@@ -123,6 +136,38 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
     setCsvHeaders([]);
     setImportResult(null);
     setIsCsvModalOpen(true);
+  };
+
+  const handleLoadBuiltin1000Data = () => {
+    const rows = ALL_STATIC_MOVIES.map((m) => ({
+      '电影ID': m.movie_id || String(m.id),
+      '电影链接': m.link || '',
+      '电影名称': m.title,
+      '豆瓣评分': m.rating,
+      '评价人数': m.rating_count,
+      '导演': m.director,
+      '编剧': m.screenwriter,
+      '主演': m.actors,
+      '类型': m.genre,
+      '制片国家/地区': m.country,
+      '语言': m.language,
+      '上映日期': m.release_date,
+      '片长': m.runtime,
+      '又名': m.alias,
+      'IMDb': m.imdb,
+      '5星': m.five_star || '0%',
+      '4星': m.four_star || '0%',
+    }));
+
+    setCsvPreviewData(rows);
+    setCsvHeaders([
+      '电影ID', '电影名称', '豆瓣评分', '评价人数', '导演', '主演', '类型', '制片国家/地区', '上映日期', '片长'
+    ]);
+    setCsvFile(null);
+    setImportResult({
+      success: true,
+      message: `已成功载入内置 1,000 条豆瓣精选电影全量数据！请选择覆盖模式后点击下方【确认导入】。`,
+    });
   };
 
   const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,23 +203,57 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
   const handleExportCsv = async () => {
     try {
       const res = await fetch('/api/movies/export/csv');
-      if (!res.ok) {
-        const text = await res.text();
-        alert(`导出失败: ${text || res.statusText}`);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('csv')) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'clean_douban_movie_data.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         return;
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'clean_douban_movie_data.csv';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error('Export CSV error:', err);
-      alert('导出 CSV 异常，请刷新后重试');
+      throw new Error('SERVER_OFFLINE');
+    } catch {
+      // Offline fallback: generate CSV client-side using getStoredMovies()
+      try {
+        const movies = getStoredMovies();
+        const exportRows = movies.map(m => ({
+          '电影ID': m.movie_id || String(m.id),
+          '电影链接': m.link || '',
+          '电影名称': m.title,
+          '豆瓣评分': m.rating,
+          '评价人数': m.rating_count,
+          '导演': m.director,
+          '编剧': m.screenwriter,
+          '主演': m.actors,
+          '类型': m.genre,
+          '制片国家/地区': m.country,
+          '语言': m.language,
+          '上映日期': m.release_date,
+          '片长': m.runtime,
+          '又名': m.alias,
+          'IMDb': m.imdb,
+          '5星': m.five_star || '0%',
+          '4星': m.four_star || '0%',
+        }));
+
+        const csvContent = Papa.unparse(exportRows);
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'clean_douban_movie_data.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err: any) {
+        alert('导出 CSV 失败: ' + err.message);
+      }
     }
   };
 
@@ -194,8 +273,8 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
   };
 
   const handleExecuteCsvImport = async () => {
-    if (!csvFile && csvPreviewData.length === 0) {
-      setImportResult({ success: false, message: '请先选择要导入的 CSV 文件' });
+    if (csvPreviewData.length === 0) {
+      setImportResult({ success: false, message: '请先选择要导入的 CSV 文件或载入内置 1000 条数据' });
       return;
     }
 
@@ -212,8 +291,13 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
         }),
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
+
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (data.success) {
         setImportResult({ success: true, message: data.message });
         fetchMovies();
         onMovieCountChange?.();
@@ -221,7 +305,72 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
         setImportResult({ success: false, message: data.error || '导入 CSV 失败' });
       }
     } catch (err: any) {
-      setImportResult({ success: false, message: err.message || '网络或服务端异常' });
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        // Local fallback for GitHub Pages
+        try {
+          const formattedMovies: Movie[] = csvPreviewData.map((row: any, idx: number) => {
+            const getNum = (v: any, def = 0) => {
+              const n = parseFloat(v);
+              return isNaN(n) ? def : n;
+            };
+            const getInt = (v: any, def = 0) => {
+              const n = parseInt(v, 10);
+              return isNaN(n) ? def : n;
+            };
+
+            const rawRelDate = String(row['上映日期'] || row['release_date'] || '').trim();
+            let year: number | undefined = undefined;
+            const match = rawRelDate.match(/\b(18|19|20)\d{2}\b/);
+            if (match) {
+              year = parseInt(match[0], 10);
+            }
+
+            return {
+              id: Date.now() + idx,
+              movie_id: String(row['电影ID'] || row['movie_id'] || (Date.now() + idx)),
+              link: String(row['电影链接'] || row['link'] || ''),
+              title: String(row['电影名称'] || row['title'] || '未命名电影'),
+              director: String(row['导演'] || row['director'] || '未知'),
+              screenwriter: String(row['编剧'] || row['screenwriter'] || '未知'),
+              actors: String(row['主演'] || row['actors'] || '未知'),
+              genre: String(row['类型'] || row['genre'] || '其他'),
+              country: String(row['制片国家/地区'] || row['country'] || '其他'),
+              language: String(row['语言'] || row['language'] || '未知'),
+              release_date: rawRelDate,
+              runtime: String(row['片长'] || row['runtime'] || ''),
+              alias: String(row['又名'] || row['alias'] || ''),
+              imdb: String(row['IMDb'] || row['imdb'] || ''),
+              rating: getNum(row['豆瓣评分'] ?? row['rating'], 0),
+              rating_count: getInt(row['评价人数'] ?? row['rating_count'], 0),
+              five_star: String(row['5星'] || row['five_star'] || '0%'),
+              four_star: String(row['4星'] || row['four_star'] || '0%'),
+              year
+            };
+          });
+
+          if (importMode === 'overwrite') {
+            localStorage.removeItem('douban_cleared_all');
+            localStorage.removeItem('douban_deleted_movie_ids');
+            localStorage.setItem('douban_custom_movies', JSON.stringify(formattedMovies));
+          } else {
+            localStorage.removeItem('douban_cleared_all');
+            const existing = getStoredMovies();
+            const combined = [...existing, ...formattedMovies];
+            localStorage.setItem('douban_custom_movies', JSON.stringify(combined));
+          }
+
+          setImportResult({
+            success: true,
+            message: `成功${importMode === 'overwrite' ? '重置并' : ''}导入 ${formattedMovies.length} 条电影数据！`,
+          });
+          fetchMovies();
+          onMovieCountChange?.();
+        } catch (localErr: any) {
+          setImportResult({ success: false, message: `离线导入异常: ${localErr.message}` });
+        }
+      } else {
+        setImportResult({ success: false, message: err.message || '网络或服务端异常' });
+      }
     } finally {
       setImportLoading(false);
     }
@@ -242,7 +391,10 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
       });
 
       const res = await fetch(`/api/movies?${params.toString()}`);
-      if (!res.ok) throw new Error('读取电影数据失败');
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
       const data = await res.json();
 
       setMovies(data.movies);
@@ -927,6 +1079,25 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
                 className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Load Builtin 1000 Dataset Banner */}
+            <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/30 p-3.5 rounded-xl text-xs">
+              <div className="flex items-center space-x-2.5 text-emerald-200">
+                <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-emerald-300 block text-sm">内置 1,000 条豆瓣精选电影数据源</span>
+                  <span className="text-[11px] text-emerald-400/80">无需上传文件，可一键载入包含评分、人数、导演等完整属性的 1,000 条电影记录</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLoadBuiltin1000Data}
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition-all shrink-0 shadow-lg shadow-emerald-500/20 active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>一键载入 1000 条数据</span>
               </button>
             </div>
 
