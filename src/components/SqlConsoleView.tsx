@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Terminal, Play, RotateCcw, AlertCircle, CheckCircle2, Clock, Table } from 'lucide-react';
+import { localExecuteSql } from '../data/staticAuth';
 
 export const SqlConsoleView: React.FC = () => {
   const [sql, setSql] = useState(`SELECT title, director, rating, rating_count, year \nFROM clean_douban_movie_data \nWHERE rating >= 9.0 \nORDER BY rating DESC \nLIMIT 15;`);
@@ -38,14 +39,24 @@ export const SqlConsoleView: React.FC = () => {
         body: JSON.stringify({ sql }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'SQL 执行失败');
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
       }
 
+      const data = await res.json();
       setResult(data);
     } catch (err: any) {
-      setError(err.message);
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        try {
+          const localRes = localExecuteSql(sql);
+          setResult(localRes);
+        } catch (localErr: any) {
+          setError(localErr.message || 'SQL 执行失败');
+        }
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }

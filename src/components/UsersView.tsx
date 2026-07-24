@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, Trash2, Key, ShieldCheck, RefreshCw, Eye, EyeOff, AlertTriangle, CheckCircle2, X, Lock, LogIn } from 'lucide-react';
 import { User } from '../types';
+import { getLocalUsers, localRegister, localDeleteUser } from '../data/staticAuth';
 
 interface UsersViewProps {
   currentUser: User | null;
@@ -30,12 +31,15 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser, onOpenAuth })
     setLoading(true);
     try {
       const res = await fetch('/api/users');
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setUsers(data);
+      } else {
+        setUsers(getLocalUsers());
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setUsers(getLocalUsers());
     } finally {
       setLoading(false);
     }
@@ -58,18 +62,32 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser, onOpenAuth })
         body: JSON.stringify({ username, account, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || '添加用户失败');
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
       }
 
+      const data = await res.json();
       setUsername('');
       setAccount('');
       setPassword('');
       setToastNotice({ type: 'success', text: `新增用户 ${data.user?.username || username} 成功！` });
       fetchUsers();
     } catch (err: any) {
-      setError(err.message);
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        try {
+          const newUser = localRegister(username, account, password);
+          setUsername('');
+          setAccount('');
+          setPassword('');
+          setToastNotice({ type: 'success', text: `新增用户 ${newUser.username} 成功！` });
+          fetchUsers();
+        } catch (localErr: any) {
+          setError(localErr.message || '添加用户失败');
+        }
+      } else {
+        setError(err.message);
+      }
     }
   };
 
@@ -89,17 +107,30 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser, onOpenAuth })
 
     try {
       const res = await fetch(`/api/users/${item.id}`, { method: 'DELETE' });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
       const data = await res.json();
 
-      if (res.ok && data.success) {
+      if (data.success) {
         setToastNotice({ type: 'success', text: data.message || `用户 ${item.username} 已成功彻底删除！` });
         fetchUsers();
       } else {
         setToastNotice({ type: 'error', text: `删除失败: ${data.error || '未知错误'}` });
       }
     } catch (err: any) {
-      console.error(err);
-      setToastNotice({ type: 'error', text: `删除异常: ${err.message || '网络连接失败'}` });
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        try {
+          localDeleteUser(item.id);
+          setToastNotice({ type: 'success', text: `用户 ${item.username} 已从离线版本成功移除！` });
+          fetchUsers();
+        } catch (localErr: any) {
+          setToastNotice({ type: 'error', text: localErr.message || '删除失败' });
+        }
+      } else {
+        setToastNotice({ type: 'error', text: `删除异常: ${err.message || '网络连接失败'}` });
+      }
     } finally {
       setDeletingId(null);
     }

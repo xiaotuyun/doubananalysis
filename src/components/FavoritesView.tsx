@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Star, Heart, Trash2, Edit2, Film, Eye } from 'lucide-react';
 import { User, Movie } from '../types';
+import { getStoredMovies } from '../data/staticAnalytics';
 
 interface FavoritesViewProps {
   currentUser: User | null;
@@ -23,12 +24,26 @@ export const FavoritesView: React.FC<FavoritesViewProps> = ({
     setLoading(true);
     try {
       const res = await fetch(`/api/favorites?userId=${currentUser.id}`);
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setFavorites(data);
+        return;
       }
-    } catch (err) {
-      console.error(err);
+    } catch {}
+
+    // Offline fallback for static hosting
+    try {
+      const key = `douban_fav_${currentUser.id}`;
+      const saved = localStorage.getItem(key);
+      const favIds: number[] = saved ? JSON.parse(saved) : [];
+      const allMovies = getStoredMovies();
+      const favMovies = allMovies
+        .filter(m => favIds.includes(m.id))
+        .map(m => ({ ...m, favorite_id: m.id }));
+      setFavorites(favMovies);
+    } catch {
+      setFavorites([]);
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, UserCheck, Key, UserPlus } from 'lucide-react';
 import { User } from '../types';
+import { localLogin, localRegister } from '../data/staticAuth';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -35,6 +36,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         body: JSON.stringify(payload),
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
+
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || '请求处理失败');
@@ -43,7 +49,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
       onLoginSuccess(data.user);
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        // Fallback to local authentication for static GitHub Pages
+        try {
+          const user = isRegister
+            ? localRegister(username, account, password)
+            : localLogin(account, password);
+          onLoginSuccess(user);
+          onClose();
+        } catch (localErr: any) {
+          setError(localErr.message || '登录/注册失败');
+        }
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }

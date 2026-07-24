@@ -108,6 +108,13 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
     setFetchingModels(true);
     setModelsError(null);
 
+    const DEFAULT_STATIC_MODELS: AIModelItem[] = [
+      { id: 'gemini-2.5-flash', rawName: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', description: '推荐：适合快速高效的文本和电影数据深度分析', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-2.5-pro', rawName: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', description: '高阶：适合复杂的深度逻辑推理与结构化报告生成', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-1.5-flash', rawName: 'models/gemini-1.5-flash', displayName: 'Gemini 1.5 Flash', description: '经典：经典快速响应模型', supportedGenerationMethods: ['generateContent'] },
+      { id: 'gemini-1.5-pro', rawName: 'models/gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', description: '经典：超大上下文深度理解模型', supportedGenerationMethods: ['generateContent'] },
+    ];
+
     try {
       const res = await fetch('/api/ai/models', {
         method: 'POST',
@@ -115,8 +122,13 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
         body: JSON.stringify({ apiKey: key.trim() }),
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
+
       const data = await res.json();
-      if (!res.ok || !data.success) {
+      if (!data.success) {
         throw new Error(data.error || '获取模型失败，请检查密钥');
       }
 
@@ -146,10 +158,17 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
         setIsModelModalOpen(true);
       }
     } catch (err: any) {
-      setModels([]);
-      setSelectedModel(null);
-      localStorage.removeItem('douban_selected_ai_model');
-      setModelsError(err.message || '模型密钥验证错误或无法连接到 Gemini API');
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        setModels(DEFAULT_STATIC_MODELS);
+        setSelectedModel('gemini-2.5-flash');
+        localStorage.setItem('douban_gemini_api_key', key.trim());
+        localStorage.setItem('douban_selected_ai_model', 'gemini-2.5-flash');
+      } else {
+        setModels([]);
+        setSelectedModel(null);
+        localStorage.removeItem('douban_selected_ai_model');
+        setModelsError(err.message || '模型密钥验证错误或无法连接到 Gemini API');
+      }
     } finally {
       setFetchingModels(false);
     }
@@ -229,6 +248,11 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
         }),
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
+      }
+
       const data = await res.json();
       if (data.success) {
         setTestResults((prev) => ({
@@ -240,22 +264,53 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
           },
         }));
       } else {
+        throw new Error(data.error || '测试返回异常');
+      }
+    } catch (err: any) {
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        // Fallback to direct client-side Google Gemini REST API call
+        const startTime = Date.now();
+        try {
+          const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey.trim()}`;
+          const directRes = await fetch(directUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: testPrompt.trim() || '你好' }] }]
+            }),
+          });
+          const directData = await directRes.json();
+          if (!directRes.ok) {
+            throw new Error(directData.error?.message || 'Gemini 密钥或模型不可用');
+          }
+          const replyText = directData.candidates?.[0]?.content?.parts?.[0]?.text || '模型连通成功';
+          const duration = Date.now() - startTime;
+          setTestResults((prev) => ({
+            ...prev,
+            [modelId]: {
+              status: 'success',
+              reply: replyText,
+              responseTimeMs: duration,
+            },
+          }));
+        } catch (directErr: any) {
+          setTestResults((prev) => ({
+            ...prev,
+            [modelId]: {
+              status: 'error',
+              error: directErr.message || '网络或密钥连通失败',
+            },
+          }));
+        }
+      } else {
         setTestResults((prev) => ({
           ...prev,
           [modelId]: {
             status: 'error',
-            error: data.error || '测试返回异常',
+            error: err.message || '网络连接测试失败',
           },
         }));
       }
-    } catch (err: any) {
-      setTestResults((prev) => ({
-        ...prev,
-        [modelId]: {
-          status: 'error',
-          error: err.message || '网络连接测试失败',
-        },
-      }));
     }
   };
 
@@ -324,23 +379,60 @@ export const AIAnalystView: React.FC<AIAnalystViewProps> = ({
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'AI 分析生成失败');
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('SERVER_OFFLINE');
       }
 
+      const data = await res.json();
       setChatHistory((prev) => [
         ...prev,
         { sender: 'ai', text: data.response, modelUsed: data.modelUsed || selectedModel },
       ]);
     } catch (err: any) {
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: `⚠️ 分析生成失败: ${err.message || '请检查密钥或选择其他可用模型'}`,
-        },
-      ]);
+      if (err.message === 'SERVER_OFFLINE' || err.name === 'SyntaxError' || err.message?.includes('JSON') || err.message?.includes('fetch')) {
+        // Fallback to direct client-side call to Google Gemini REST API
+        try {
+          const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey.trim()}`;
+          let fullPrompt = query;
+          if (selectedMovieForAI) {
+            fullPrompt = `[针对电影《${selectedMovieForAI.title}》（导演:${selectedMovieForAI.director}，评分:${selectedMovieForAI.rating}分，类型:${selectedMovieForAI.genre}）的分析分析请求]:\n${query}`;
+          }
+
+          const directRes = await fetch(directUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }]
+            }),
+          });
+          const directData = await directRes.json();
+          if (!directRes.ok) {
+            throw new Error(directData.error?.message || 'Gemini 密钥或模型不可用');
+          }
+          const replyText = directData.candidates?.[0]?.content?.parts?.[0]?.text || '生成成功';
+          setChatHistory((prev) => [
+            ...prev,
+            { sender: 'ai', text: replyText, modelUsed: selectedModel },
+          ]);
+        } catch (directErr: any) {
+          setChatHistory((prev) => [
+            ...prev,
+            {
+              sender: 'ai',
+              text: `⚠️ 分析生成失败: ${directErr.message || '网络连接或密钥验证失败'}`,
+            },
+          ]);
+        }
+      } else {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            sender: 'ai',
+            text: `⚠️ 分析生成失败: ${err.message || '请检查密钥或选择其他可用模型'}`,
+          },
+        ]);
+      }
     } finally {
       setLoading(false);
     }

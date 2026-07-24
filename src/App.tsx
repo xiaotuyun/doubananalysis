@@ -55,13 +55,21 @@ export function App() {
     }
     try {
       const res = await fetch(`/api/favorites?userId=${currentUser.id}`);
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setFavoriteMovieIds(data.map((item: any) => item.id));
+        return;
       }
-    } catch (err) {
-      console.error(err);
-    }
+    } catch {}
+
+    // Fallback to local storage for GitHub Pages static hosting
+    try {
+      const key = `douban_fav_${currentUser.id}`;
+      const saved = localStorage.getItem(key);
+      const ids: number[] = saved ? JSON.parse(saved) : [];
+      setFavoriteMovieIds(ids);
+    } catch {}
   };
 
   useEffect(() => {
@@ -86,33 +94,43 @@ export function App() {
     }
 
     const isFav = favoriteMovieIds.includes(movieId);
-    if (isFav) {
-      // Find favorite_id to delete
-      try {
+    try {
+      if (isFav) {
         const res = await fetch(`/api/favorites?userId=${currentUser.id}`);
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const list = await res.json();
           const target = list.find((item: any) => item.id === movieId);
           if (target) {
             await fetch(`/api/favorites/${target.favorite_id}`, { method: 'DELETE' });
-            fetchUserFavorites();
           }
+        } else {
+          throw new Error('OFFLINE');
         }
-      } catch (err) {
-        console.error(err);
-      }
-    } else {
-      try {
-        await fetch('/api/favorites', {
+      } else {
+        const res = await fetch('/api/favorites', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: currentUser.id, movieId }),
         });
-        fetchUserFavorites();
-      } catch (err) {
-        console.error(err);
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) {
+          throw new Error('OFFLINE');
+        }
       }
+    } catch {
+      // Local storage fallback for GitHub Pages
+      const key = `douban_fav_${currentUser.id}`;
+      let ids = favoriteMovieIds;
+      if (isFav) {
+        ids = ids.filter(id => id !== movieId);
+      } else {
+        ids = [...ids, movieId];
+      }
+      setFavoriteMovieIds(ids);
+      localStorage.setItem(key, JSON.stringify(ids));
     }
+    fetchUserFavorites();
   };
 
   const handleRemoveFavoriteById = async (favoriteId: number) => {
