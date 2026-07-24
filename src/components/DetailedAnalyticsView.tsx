@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getStaticDetailedAnalyticsData } from '../data/staticAnalytics';
 import {
   BarChart,
   Bar,
@@ -207,8 +208,8 @@ export const DetailedAnalyticsView: React.FC = () => {
       const result = await res.json();
       setData(result);
     } catch {
-      // Fallback to static mock data for static GitHub Pages deployment
-      setData(FALLBACK_DATA);
+      // Fallback to static detailed analytics computed from 1000 dataset records for static GitHub Pages hosting
+      setData(getStaticDetailedAnalyticsData());
     } finally {
       setLoading(false);
     }

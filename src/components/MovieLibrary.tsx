@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { Movie, User } from '../types';
+import { getStaticMovies } from '../data/staticAnalytics';
 
 interface MovieLibraryProps {
   currentUser: User | null;
@@ -248,19 +249,21 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch {
-      // Fallback to client-side static movies list on GitHub Pages static deployment
-      let filtered = [...FALLBACK_MOVIES];
-      if (search) {
-        const s = search.toLowerCase();
-        filtered = filtered.filter(m => m.title.toLowerCase().includes(s) || m.director.toLowerCase().includes(s) || m.actors.toLowerCase().includes(s));
-      }
-      if (genre) filtered = filtered.filter(m => m.genre.includes(genre));
-      if (country) filtered = filtered.filter(m => m.country.includes(country));
-      if (minRating) filtered = filtered.filter(m => m.rating >= Number(minRating));
-      
-      setMovies(filtered);
-      setTotal(filtered.length);
-      setTotalPages(1);
+      // Fallback to client-side static filterable & paginated movies list (1000 items) on GitHub Pages static deployment
+      const resData = getStaticMovies({
+        page,
+        limit: 12,
+        search,
+        genre,
+        country,
+        minRating: minRating ? Number(minRating) : undefined,
+        sortBy: sortBy as any,
+        sortOrder: sortOrder as any,
+      });
+
+      setMovies(resData.movies);
+      setTotal(resData.total);
+      setTotalPages(resData.totalPages);
     } finally {
       setLoading(false);
     }
@@ -334,9 +337,19 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
       if (res.ok) {
         fetchMovies();
         onMovieCountChange?.();
+      } else {
+        throw new Error('API delete failed');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Offline fallback: store deleted ID in localStorage
+      try {
+        const raw = localStorage.getItem('douban_deleted_movie_ids');
+        const list: number[] = raw ? JSON.parse(raw) : [];
+        if (!list.includes(targetId)) list.push(targetId);
+        localStorage.setItem('douban_deleted_movie_ids', JSON.stringify(list));
+      } catch {}
+      fetchMovies();
+      onMovieCountChange?.();
     }
   };
 
@@ -355,9 +368,37 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
       if (res.ok) {
         setIsModalOpen(false);
         fetchMovies();
+      } else {
+        throw new Error('API save failed');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Offline fallback: save to localStorage custom movies
+      try {
+        const raw = localStorage.getItem('douban_custom_movies');
+        let customList: Movie[] = raw ? JSON.parse(raw) : [];
+        const formattedData = {
+          ...formData,
+          rating: Number(formData.rating) || 0,
+          rating_count: Number(formData.rating_count) || 0,
+          year: formData.release_date ? parseInt(formData.release_date, 10) || undefined : undefined,
+        };
+
+        if (editingMovie) {
+          customList = customList.map(m => m.id === editingMovie.id ? { ...m, ...formattedData } : m);
+        } else {
+          const newM: Movie = {
+            id: Date.now(),
+            movie_id: String(Date.now()),
+            link: '',
+            ...formattedData,
+          };
+          customList.push(newM);
+        }
+        localStorage.setItem('douban_custom_movies', JSON.stringify(customList));
+      } catch {}
+      setIsModalOpen(false);
+      fetchMovies();
+      onMovieCountChange?.();
     }
   };
 

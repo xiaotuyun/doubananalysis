@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { AnalyticsSummary } from '../types';
 import { Film, Star, MessageSquare, TrendingUp, Award, Globe, Video, Sparkles, RefreshCw } from 'lucide-react';
+import { getStaticAnalyticsSummary } from '../data/staticAnalytics';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#64748b', '#14b8a6', '#a855f7'];
 
@@ -79,8 +80,8 @@ export const Dashboard: React.FC = () => {
       const result = await res.json();
       setData(result);
     } catch {
-      // Fallback to static summary data for static GitHub Pages hosting
-      setData(FALLBACK_SUMMARY);
+      // Fallback to static summary computed from 1000 dataset records for static GitHub Pages hosting
+      setData(getStaticAnalyticsSummary());
     } finally {
       setLoading(false);
     }
