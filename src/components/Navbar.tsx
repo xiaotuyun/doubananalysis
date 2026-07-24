@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   Film, 
   BarChart3, 
+  PieChart as PieIcon,
   Database, 
   Terminal, 
   Sparkles, 
@@ -36,6 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: '数据大屏', icon: BarChart3 },
+    { id: 'analytics', label: '图表分析界面', icon: PieIcon },
     { id: 'movies', label: movieTabLabel, icon: Film },
     { 
       id: 'users', 

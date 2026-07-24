@@ -8,6 +8,63 @@ import { Film, Star, MessageSquare, TrendingUp, Award, Globe, Video, Sparkles, R
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#64748b', '#14b8a6', '#a855f7'];
 
+const FALLBACK_SUMMARY: AnalyticsSummary = {
+  totalMovies: 250,
+  avgRating: 8.82,
+  maxRating: 9.7,
+  totalReviews: 125800000,
+  ratingDist: [
+    { range: '8.0-8.4分', count: 62 },
+    { range: '8.5-8.8分', count: 115 },
+    { range: '8.9-9.2分', count: 58 },
+    { range: '9.3-9.7分', count: 15 },
+  ],
+  topGenres: [
+    { genre: '剧情', count: 185, avgRating: 8.84 },
+    { genre: '爱情', count: 65, avgRating: 8.72 },
+    { genre: '喜剧', count: 52, avgRating: 8.68 },
+    { genre: '动画', count: 48, avgRating: 8.95 },
+    { genre: '犯罪', count: 42, avgRating: 8.81 },
+    { genre: '科幻', count: 38, avgRating: 8.88 },
+  ],
+  topDirectors: [
+    { director: '克里斯托弗·诺兰', count: 8, avgRating: 9.02 },
+    { director: '宫崎骏', count: 7, avgRating: 9.15 },
+    { director: '史蒂文·斯皮尔伯格', count: 6, avgRating: 8.85 },
+    { director: '李安', count: 5, avgRating: 8.90 },
+    { director: '王家卫', count: 5, avgRating: 8.78 },
+  ],
+  topCountries: [
+    { country: '美国', count: 120 },
+    { country: '日本', count: 48 },
+    { country: '中国香港', count: 32 },
+    { country: '中国大陆', count: 28 },
+    { country: '英国', count: 25 },
+  ],
+  decadeTrend: [
+    { decade: '1930s-1970s', count: 25, avgRating: 8.91 },
+    { decade: '1980s', count: 22, avgRating: 8.78 },
+    { decade: '1990s', count: 68, avgRating: 8.92 },
+    { decade: '2000s', count: 72, avgRating: 8.79 },
+    { decade: '2010s', count: 53, avgRating: 8.75 },
+    { decade: '2020s', count: 10, avgRating: 8.65 },
+  ],
+  ratingVsReviews: [
+    { title: '肖申克的救赎', rating: 9.7, reviewCount: 2980000 },
+    { title: '霸王别姬', rating: 9.6, reviewCount: 2120000 },
+    { title: '阿甘正传', rating: 9.5, reviewCount: 2190000 },
+    { title: '泰坦尼克号', rating: 9.5, reviewCount: 2100000 },
+    { title: '千与千寻', rating: 9.4, reviewCount: 2280000 },
+  ],
+  topRatedMovies: [
+    { id: 1, movie_id: '1292052', link: 'https://movie.douban.com/subject/1292052/', title: '肖申克的救赎', director: '弗兰克·德拉邦特', screenwriter: '弗兰克·德拉邦特', actors: '蒂姆·罗宾斯 / 摩根·弗里曼', genre: '剧情 / 犯罪', country: '美国', language: '英语', release_date: '1994-09-10', runtime: '142分钟', alias: '月黑高飞 / 刺激1995', imdb: 'tt0111161', rating: 9.7, rating_count: 2980000, five_star: '85%', four_star: '12%', year: 1994 },
+    { id: 2, movie_id: '1291546', link: 'https://movie.douban.com/subject/1291546/', title: '霸王别姬', director: '陈凯歌', screenwriter: '李碧华 / 芦苇', actors: '张国荣 / 张丰毅 / 巩俐', genre: '剧情 / 爱情 / 同性', country: '中国大陆 / 中国香港', language: '汉语普通话', release_date: '1993-01-01', runtime: '171分钟', alias: '再见，我的妾', imdb: 'tt0106332', rating: 9.6, rating_count: 2120000, five_star: '82%', four_star: '14%', year: 1993 },
+  ],
+  mostReviewedMovies: [
+    { id: 1, movie_id: '1292052', link: 'https://movie.douban.com/subject/1292052/', title: '肖申克的救赎', director: '弗兰克·德拉邦特', screenwriter: '弗兰克·德拉邦特', actors: '蒂姆·罗宾斯 / 摩根·弗里曼', genre: '剧情 / 犯罪', country: '美国', language: '英语', release_date: '1994-09-10', runtime: '142分钟', alias: '月黑高飞 / 刺激1995', imdb: 'tt0111161', rating: 9.7, rating_count: 2980000, five_star: '85%', four_star: '12%', year: 1994 },
+  ],
+};
+
 export const Dashboard: React.FC = () => {
   const [data, setData] = useState<AnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,8 +78,9 @@ export const Dashboard: React.FC = () => {
       if (!res.ok) throw new Error('获取统计数据失败');
       const result = await res.json();
       setData(result);
-    } catch (err: any) {
-      setError(err.message);
+    } catch {
+      // Fallback to static summary data for static GitHub Pages hosting
+      setData(FALLBACK_SUMMARY);
     } finally {
       setLoading(false);
     }

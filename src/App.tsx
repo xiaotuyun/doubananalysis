@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { AuthModal } from './components/AuthModal';
 import { Dashboard } from './components/Dashboard';
+import { DetailedAnalyticsView } from './components/DetailedAnalyticsView';
 import { MovieLibrary } from './components/MovieLibrary';
 import { UsersView } from './components/UsersView';
 import { SqlConsoleView } from './components/SqlConsoleView';
@@ -144,6 +145,8 @@ export function App() {
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         {activeTab === 'dashboard' && <Dashboard />}
+
+        {activeTab === 'analytics' && <DetailedAnalyticsView />}
 
         {activeTab === 'movies' && (
           <MovieLibrary

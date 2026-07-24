@@ -708,6 +708,252 @@ app.get('/api/analytics/summary', (req, res) => {
   }
 });
 
+// Detailed Analytics Endpoint for Chart Views
+app.get('/api/analytics/detailed', (req, res) => {
+  try {
+    // 1. Runtime Distribution (<90min, 90-120min, 120-150min, >150min)
+    const allRuntimes = db.prepare('SELECT runtime, rating, rating_count FROM clean_douban_movie_data').all() as any[];
+    const runtimeGroups = {
+      '< 90分钟': { label: '< 90分钟', count: 0, totalRating: 0, totalReviews: 0 },
+      '90-120分钟': { label: '90-120分钟', count: 0, totalRating: 0, totalReviews: 0 },
+      '120-150分钟': { label: '120-150分钟', count: 0, totalRating: 0, totalReviews: 0 },
+      '> 150分钟': { label: '> 150分钟', count: 0, totalRating: 0, totalReviews: 0 },
+    };
+
+    allRuntimes.forEach((m) => {
+      const match = (m.runtime || '').match(/(\d+)/);
+      if (match) {
+        const mins = parseInt(match[1]);
+        const r = m.rating || 0;
+        const rc = m.rating_count || 0;
+        if (mins < 90) {
+          runtimeGroups['< 90分钟'].count++;
+          runtimeGroups['< 90分钟'].totalRating += r;
+          runtimeGroups['< 90分钟'].totalReviews += rc;
+        } else if (mins <= 120) {
+          runtimeGroups['90-120分钟'].count++;
+          runtimeGroups['90-120分钟'].totalRating += r;
+          runtimeGroups['90-120分钟'].totalReviews += rc;
+        } else if (mins <= 150) {
+          runtimeGroups['120-150分钟'].count++;
+          runtimeGroups['120-150分钟'].totalRating += r;
+          runtimeGroups['120-150分钟'].totalReviews += rc;
+        } else {
+          runtimeGroups['> 150分钟'].count++;
+          runtimeGroups['> 150分钟'].totalRating += r;
+          runtimeGroups['> 150分钟'].totalReviews += rc;
+        }
+      }
+    });
+
+    const runtimeDist = Object.values(runtimeGroups).map((g) => ({
+      range: g.label,
+      count: g.count,
+      avgRating: g.count > 0 ? parseFloat((g.totalRating / g.count).toFixed(2)) : 0,
+      avgReviews: g.count > 0 ? Math.round(g.totalReviews / g.count) : 0,
+    }));
+
+    // 2. Country & Region Detailed Breakdown & High-Score Ratio
+    const allCountries = db.prepare('SELECT country, rating, rating_count FROM clean_douban_movie_data').all() as any[];
+    const countryMap: Record<string, { count: number; totalRating: number; totalReviews: number; high9Count: number }> = {};
+
+    allCountries.forEach((m) => {
+      if (!m.country) return;
+      const countries = m.country.split(/[\s\/]+/).map((c: string) => c.trim()).filter(Boolean);
+      const r = m.rating || 0;
+      countries.forEach((c: string) => {
+        if (!countryMap[c]) countryMap[c] = { count: 0, totalRating: 0, totalReviews: 0, high9Count: 0 };
+        countryMap[c].count++;
+        countryMap[c].totalRating += r;
+        countryMap[c].totalReviews += m.rating_count || 0;
+        if (r >= 9.0) countryMap[c].high9Count++;
+      });
+    });
+
+    const countryStats = Object.entries(countryMap)
+      .map(([country, val]) => ({
+        country,
+        count: val.count,
+        avgRating: parseFloat((val.totalRating / val.count).toFixed(2)),
+        avgReviews: Math.round(val.totalReviews / val.count),
+        high9Ratio: parseFloat(((val.high9Count / val.count) * 100).toFixed(1)),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+
+    // 3. Language Distribution
+    const allLanguages = db.prepare('SELECT language, rating FROM clean_douban_movie_data').all() as any[];
+    const langMap: Record<string, { count: number; totalRating: number }> = {};
+
+    allLanguages.forEach((m) => {
+      if (!m.language) return;
+      const langs = m.language.split(/[\s\/]+/).map((l: string) => l.trim()).filter(Boolean);
+      langs.forEach((l: string) => {
+        if (!langMap[l]) langMap[l] = { count: 0, totalRating: 0 };
+        langMap[l].count++;
+        langMap[l].totalRating += m.rating || 0;
+      });
+    });
+
+    const languageStats = Object.entries(langMap)
+      .map(([language, val]) => ({
+        language,
+        count: val.count,
+        avgRating: parseFloat((val.totalRating / val.count).toFixed(2)),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // 4. Star Rating Averages & Score Ranges
+    const starData = db.prepare('SELECT five_star, four_star, rating FROM clean_douban_movie_data').all() as any[];
+    let sum5 = 0, sum4 = 0, countStar = 0;
+    const scoreBins = {
+      '8.0 - 8.4分': 0,
+      '8.5 - 8.8分': 0,
+      '8.9 - 9.2分': 0,
+      '9.3分以上神作': 0,
+    };
+
+    starData.forEach((s) => {
+      const f5 = parseFloat((s.five_star || '').replace('%', ''));
+      const f4 = parseFloat((s.four_star || '').replace('%', ''));
+      if (!isNaN(f5) && !isNaN(f4)) {
+        sum5 += f5;
+        sum4 += f4;
+        countStar++;
+      }
+      const r = s.rating || 0;
+      if (r < 8.5) scoreBins['8.0 - 8.4分']++;
+      else if (r < 8.9) scoreBins['8.5 - 8.8分']++;
+      else if (r < 9.3) scoreBins['8.9 - 9.2分']++;
+      else scoreBins['9.3分以上神作']++;
+    });
+
+    const avg5Star = countStar > 0 ? parseFloat((sum5 / countStar).toFixed(1)) : 50;
+    const avg4Star = countStar > 0 ? parseFloat((sum4 / countStar).toFixed(1)) : 35;
+    const avgOtherStar = parseFloat((100 - avg5Star - avg4Star).toFixed(1));
+
+    const starRatingBreakdown = [
+      { name: '5星 (极力推荐)', value: avg5Star, color: '#10b981' },
+      { name: '4星 (推荐)', value: avg4Star, color: '#3b82f6' },
+      { name: '3星及以下 (一般/较差)', value: Math.max(0, avgOtherStar), color: '#f59e0b' },
+    ];
+
+    const scoreRanges = Object.entries(scoreBins).map(([range, count]) => ({
+      range,
+      count,
+    }));
+
+    // 5. Yearly Production & Avg Rating Trend (1980 - 2024)
+    const yearlyTrend = db.prepare(`
+      SELECT 
+        year,
+        COUNT(*) as count,
+        ROUND(AVG(rating), 2) as avgRating
+      FROM clean_douban_movie_data
+      WHERE year >= 1980 AND year <= 2024
+      GROUP BY year
+      ORDER BY year ASC
+    `).all();
+
+    // 6. Deep Genre Metrics & Radar Normalized Data
+    const allMoviesForGenre = db.prepare('SELECT title, genre, rating, rating_count FROM clean_douban_movie_data').all() as any[];
+    const genreDeepMap: Record<string, { count: number; totalRating: number; totalReviews: number; high9Count: number; maxRating: number; topTitle: string }> = {};
+
+    allMoviesForGenre.forEach((m) => {
+      if (!m.genre) return;
+      const genres = m.genre.split(/[\s\/]+/).map((g: string) => g.trim()).filter(Boolean);
+      const r = m.rating || 0;
+      const rc = m.rating_count || 0;
+      genres.forEach((g: string) => {
+        if (!genreDeepMap[g]) {
+          genreDeepMap[g] = { count: 0, totalRating: 0, totalReviews: 0, high9Count: 0, maxRating: 0, topTitle: '' };
+        }
+        genreDeepMap[g].count++;
+        genreDeepMap[g].totalRating += r;
+        genreDeepMap[g].totalReviews += rc;
+        if (r >= 9.0) genreDeepMap[g].high9Count++;
+        if (r > genreDeepMap[g].maxRating) {
+          genreDeepMap[g].maxRating = r;
+          genreDeepMap[g].topTitle = m.title;
+        }
+      });
+    });
+
+    const genreDeepStats = Object.entries(genreDeepMap)
+      .map(([genre, val]) => ({
+        genre,
+        count: val.count,
+        avgRating: parseFloat((val.totalRating / val.count).toFixed(2)),
+        high9Ratio: parseFloat(((val.high9Count / val.count) * 100).toFixed(1)),
+        high9Count: val.high9Count,
+        maxRating: val.maxRating,
+        topTitle: val.topTitle,
+        avgReviews: Math.round(val.totalReviews / val.count),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+
+    // Radar normalized dataset for top 6 genres
+    const genreRadar = genreDeepStats.slice(0, 6).map((g) => ({
+      genre: g.genre,
+      作品量: Math.min(100, Math.round((g.count / 150) * 100)),
+      均分指数: Math.round((g.avgRating / 10) * 100),
+      神作占比: Math.round(g.high9Ratio * 2),
+      热度指数: Math.min(100, Math.round((g.avgReviews / 600000) * 100)),
+    }));
+
+    // 7. Quadrant Scatter Analysis & Top 15 Popular Movies
+    const scatterMovies = db.prepare(`
+      SELECT title, rating, rating_count, genre, year
+      FROM clean_douban_movie_data
+      ORDER BY rating_count DESC
+      LIMIT 80
+    `).all() as any[];
+
+    const top15Popular = scatterMovies.slice(0, 15).map((m) => ({
+      title: m.title.length > 8 ? m.title.substring(0, 8) + '…' : m.title,
+      fullTitle: m.title,
+      reviews: Math.round(m.rating_count / 10000), // 万人
+      rating: m.rating,
+    }));
+
+    // Quadrant summary
+    let highRatingHighReviews = 0; // 高分爆款
+    let highRatingLowReviews = 0;  // 高分宝藏/冷门
+    let avgRatingHighReviews = 0;  // 口碑平平人气热
+    let avgRatingLowReviews = 0;   // 普众小众
+
+    scatterMovies.forEach((m) => {
+      if (m.rating >= 8.8 && m.rating_count >= 500000) highRatingHighReviews++;
+      else if (m.rating >= 8.8 && m.rating_count < 500000) highRatingLowReviews++;
+      else if (m.rating < 8.8 && m.rating_count >= 500000) avgRatingHighReviews++;
+      else avgRatingLowReviews++;
+    });
+
+    res.json({
+      runtimeDist,
+      countryStats,
+      languageStats,
+      starRatingBreakdown,
+      scoreRanges,
+      yearlyTrend,
+      genreDeepStats,
+      genreRadar,
+      scatterMovies,
+      top15Popular,
+      quadrants: {
+        highRatingHighReviews,
+        highRatingLowReviews,
+        avgRatingHighReviews,
+        avgRatingLowReviews,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ----------------------------------------------------
 // 4. Personal Watchlist / Favorites API (用户收藏 API)
 // ----------------------------------------------------

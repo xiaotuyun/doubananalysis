@@ -17,6 +17,17 @@ interface MovieLibraryProps {
   onMovieCountChange?: () => void;
 }
 
+const FALLBACK_MOVIES: Movie[] = [
+  { id: 1, movie_id: '1292052', link: 'https://movie.douban.com/subject/1292052/', title: '肖申克的救赎', director: '弗兰克·德拉邦特', screenwriter: '弗兰克·德拉邦特', actors: '蒂姆·罗宾斯 / 摩根·弗里曼', genre: '剧情 / 犯罪', country: '美国', language: '英语', release_date: '1994-09-10', runtime: '142分钟', alias: '月黑高飞 / 刺激1995', imdb: 'tt0111161', rating: 9.7, rating_count: 2980000, five_star: '85.2%', four_star: '12.4%', year: 1994 },
+  { id: 2, movie_id: '1291546', link: 'https://movie.douban.com/subject/1291546/', title: '霸王别姬', director: '陈凯歌', screenwriter: '李碧华 / 芦苇', actors: '张国荣 / 张丰毅 / 巩俐', genre: '剧情 / 爱情 / 同性', country: '中国大陆 / 中国香港', language: '汉语普通话', release_date: '1993-01-01', runtime: '171分钟', alias: '再见，我的妾 / Farewell My Concubine', imdb: 'tt0106332', rating: 9.6, rating_count: 2120000, five_star: '82.1%', four_star: '14.3%', year: 1993 },
+  { id: 3, movie_id: '1295038', link: 'https://movie.douban.com/subject/1295038/', title: '哈利·波特与魔法石', director: '克里斯·哥伦布', screenwriter: '史蒂夫·克洛夫斯', actors: '丹尼尔·雷德克里夫 / 艾玛·沃森', genre: '奇幻 / 冒险', country: '英国 / 美国', language: '英语', release_date: '2001-11-16', runtime: '152分钟', alias: '哈利波特1', imdb: 'tt0241527', rating: 9.2, rating_count: 1250000, five_star: '68.0%', four_star: '25.0%', year: 2001 },
+  { id: 4, movie_id: '1292720', link: 'https://movie.douban.com/subject/1292720/', title: '阿甘正传', director: '罗伯特·泽米吉斯', screenwriter: '埃里克·罗斯', actors: '汤姆·汉克斯 / 罗宾·怀特', genre: '剧情 / 爱情', country: '美国', language: '英语', release_date: '1994-06-23', runtime: '142分钟', alias: '福雷斯特·甘普', imdb: 'tt0109830', rating: 9.5, rating_count: 2190000, five_star: '78.5%', four_star: '17.2%', year: 1994 },
+  { id: 5, movie_id: '1292722', link: 'https://movie.douban.com/subject/1292722/', title: '泰坦尼克号', director: '詹姆斯·卡梅隆', screenwriter: '詹姆斯·卡梅隆', actors: '莱昂纳多·迪卡普里奥 / 凯特·温丝莱特', genre: '剧情 / 爱情 / 灾难', country: '美国', language: '英语 / 意大利语', release_date: '1997-12-19', runtime: '194分钟', alias: '铁达尼号', imdb: 'tt0120338', rating: 9.5, rating_count: 2100000, five_star: '77.8%', four_star: '18.1%', year: 1997 },
+  { id: 6, movie_id: '1291561', link: 'https://movie.douban.com/subject/1291561/', title: '千与千寻', director: '宫崎骏', screenwriter: '宫崎骏', actors: '柊瑠美 / 入野自由 / 夏木真理', genre: '剧情 / 动画 / 奇幻', country: '日本', language: '日语', release_date: '2001-07-20', runtime: '125分钟', alias: '神隐少女 / Spirited Away', imdb: 'tt0245429', rating: 9.4, rating_count: 2280000, five_star: '74.2%', four_star: '21.0%', year: 2001 },
+  { id: 7, movie_id: '3541415', link: 'https://movie.douban.com/subject/3541415/', title: '盗梦空间', director: '克里斯托弗·诺兰', screenwriter: '克里斯托弗·诺兰', actors: '莱昂纳多·迪卡普里奥 / 约瑟夫·高登-莱维特', genre: '剧情 / 科幻 / 悬疑 / 冒险', country: '美国 / 英国', language: '英语 / 日语', release_date: '2010-07-16', runtime: '148分钟', alias: '奠基 / 潜行凶间', imdb: 'tt1375666', rating: 9.4, rating_count: 2050000, five_star: '73.5%', four_star: '21.5%', year: 2010 },
+  { id: 8, movie_id: '1889243', link: 'https://movie.douban.com/subject/1889243/', title: '星际穿越', director: '克里斯托弗·诺兰', screenwriter: '乔纳森·诺兰 / 克里斯托弗·诺兰', actors: '马修·麦康纳 / 安妮·海瑟薇', genre: '剧情 / 科幻 / 冒险', country: '美国 / 英国 / 加拿大', language: '英语', release_date: '2014-11-07', runtime: '169分钟', alias: '星际启示录', imdb: 'tt0816692', rating: 9.4, rating_count: 1820000, five_star: '73.0%', four_star: '21.8%', year: 2014 },
+];
+
 export const MovieLibrary: React.FC<MovieLibraryProps> = ({
   currentUser,
   onOpenAuth,
@@ -236,8 +247,20 @@ export const MovieLibrary: React.FC<MovieLibraryProps> = ({
       setMovies(data.movies);
       setTotal(data.total);
       setTotalPages(data.totalPages);
-    } catch (err: any) {
-      console.error(err);
+    } catch {
+      // Fallback to client-side static movies list on GitHub Pages static deployment
+      let filtered = [...FALLBACK_MOVIES];
+      if (search) {
+        const s = search.toLowerCase();
+        filtered = filtered.filter(m => m.title.toLowerCase().includes(s) || m.director.toLowerCase().includes(s) || m.actors.toLowerCase().includes(s));
+      }
+      if (genre) filtered = filtered.filter(m => m.genre.includes(genre));
+      if (country) filtered = filtered.filter(m => m.country.includes(country));
+      if (minRating) filtered = filtered.filter(m => m.rating >= Number(minRating));
+      
+      setMovies(filtered);
+      setTotal(filtered.length);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
