@@ -1,0 +1,6 @@
+{
+  "name": "豆瓣电影数据分析平台",
+  "description": "基于SQLite与Gemini AI的豆瓣电影数据分析平台，包含用户系统、1769条精选豆瓣电影数据检索、多维可视化图表统计与AI智能影评推荐。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
