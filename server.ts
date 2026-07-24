@@ -797,18 +797,141 @@ app.post('/api/sql/execute', (req, res) => {
 });
 
 // ----------------------------------------------------
-// 6. Gemini AI Assistant & Recommender API (AI智能影评)
+// 6. Gemini AI Assistant & Recommender API (AI智能影评 - 手动密钥与动态模型)
 // ----------------------------------------------------
+
+// List models using custom API Key
+app.post('/api/ai/models', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: '请先填写有效的 Gemini API 密钥' });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const listPager = await ai.models.list();
+    const rawModels: any[] = [];
+
+    if (listPager && Array.isArray((listPager as any).models)) {
+      rawModels.push(...(listPager as any).models);
+    } else if (listPager && typeof (listPager as any)[Symbol.asyncIterator] === 'function') {
+      for await (const m of listPager) {
+        rawModels.push(m);
+      }
+    } else if (listPager && typeof (listPager as any)[Symbol.iterator] === 'function') {
+      for (const m of listPager as any) {
+        rawModels.push(m);
+      }
+    }
+
+    const formattedModels = rawModels
+      .map((m: any) => {
+        const rawName = m.name || '';
+        const cleanName = rawName.replace(/^models\//, '');
+        return {
+          id: cleanName,
+          rawName: rawName,
+          displayName: m.displayName || cleanName,
+          description: m.description || '',
+          supportedGenerationMethods: m.supportedGenerationMethods || [],
+        };
+      })
+      .filter((m: any) => {
+        if (m.supportedGenerationMethods && m.supportedGenerationMethods.length > 0) {
+          return m.supportedGenerationMethods.includes('generateContent');
+        }
+        return m.id.includes('gemini') || m.id.includes('gemma');
+      });
+
+    if (formattedModels.length === 0) {
+      return res.status(404).json({ error: '该 API 密钥账户下未找到可用的 Gemini 文本生成模型' });
+    }
+
+    res.json({ success: true, models: formattedModels });
+  } catch (err: any) {
+    console.error('[Get Models Error]:', err);
+    res.status(400).json({
+      error: err.message || '获取模型列表失败，请检查 API 密钥是否输入正确。',
+    });
+  }
+});
+
+// Test a specific model with test prompt
+app.post('/api/ai/test-model', async (req, res) => {
+  try {
+    const { apiKey, model, testPrompt = '你好' } = req.body;
+    if (!apiKey || !apiKey.trim()) {
+      return res.status(400).json({ error: '请提供 API 密钥' });
+    }
+    if (!model || !model.trim()) {
+      return res.status(400).json({ error: '请提供测试模型名称' });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const startTime = Date.now();
+    const result = await ai.models.generateContent({
+      model: model.trim(),
+      contents: testPrompt,
+    });
+    const endTime = Date.now();
+
+    res.json({
+      success: true,
+      model: model,
+      reply: result.text || '无返回文本',
+      responseTimeMs: endTime - startTime,
+    });
+  } catch (err: any) {
+    console.error(`[Test Model ${req.body.model} Error]:`, err);
+    res.json({
+      success: false,
+      model: req.body.model,
+      error: err.message || '模型测试响应失败',
+    });
+  }
+});
+
+// AI Generation / Analysis using custom key and chosen model
 app.post('/api/ai/analyze', async (req, res) => {
   try {
-    const { prompt, type = 'general', movieId } = req.body;
+    const { apiKey, model, prompt, type = 'general', movieId } = req.body;
 
-    const ai = getGeminiClient();
-    if (!ai) {
-      return res.status(500).json({
-        error: '未配置 GEMINI_API_KEY 环境变量，请在 AI Studio Secrets 中设置密钥。',
+    if (!apiKey || !apiKey.trim()) {
+      return res.status(400).json({
+        error: '未输入 API 密钥，请在页面顶部手动填写您的 Gemini API Key。',
       });
     }
+
+    if (!model || !model.trim()) {
+      return res.status(400).json({
+        error: '未选择模型，请先获取并选择要使用的 AI 模型。',
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
 
     // Context from database
     let dbContext = '';
@@ -827,7 +950,7 @@ app.post('/api/ai/analyze', async (req, res) => {
     const userQuery = `${dbContext}\n用户问题/需求: ${prompt || '请对当前豆瓣电影数据集进行全面亮点洞察与推荐'}`;
 
     const geminiResponse = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: model.trim(),
       contents: userQuery,
       config: {
         systemInstruction,
@@ -835,7 +958,7 @@ app.post('/api/ai/analyze', async (req, res) => {
       },
     });
 
-    res.json({ response: geminiResponse.text });
+    res.json({ response: geminiResponse.text, modelUsed: model });
   } catch (err: any) {
     console.error('[Gemini AI Error]:', err);
     res.status(500).json({ error: err.message || 'AI 分析生成失败' });
